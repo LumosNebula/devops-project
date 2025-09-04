@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: calico-node-token
+  namespace: calico-system
+  annotations:
+    kubernetes.io/service-account.name: calico-node
+type: kubernetes.io/service-account-token

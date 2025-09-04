@@ -1,0 +1,48 @@
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  variant: Calico
+  calicoNetwork:
+    bgp: Enabled
+    hostPorts: Enabled
+    ipPools:
+    - cidr: 192.168.0.0/16
+      blockSize: 26
+      encapsulation: IPIP
+      natOutgoing: Enabled
+      nodeSelector: all()
+    linuxDataplane: Iptables
+    nodeAddressAutodetectionV4:
+      interface: ens33
+    mtu: 0
+  cni:
+    type: Calico
+    ipam:
+      type: Calico
+  controlPlaneReplicas: 2
+  nodeUpdateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  componentResources:
+  - componentName: Node
+    resourceRequirements:
+      requests:
+        cpu: 250m
+  logging:
+    cni:
+      logSeverity: Info
+      logFileMaxSize: 100Mi
+      logFileMaxCount: 10
+      logFileMaxAgeDays: 30
+---
+apiVersion: crd.projectcalico.org/v1
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  wireguardEnabled: false
+  wireguardEnabledV6: false

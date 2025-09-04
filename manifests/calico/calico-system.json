@@ -1,0 +1,68 @@
+{
+    "apiVersion": "v1",
+    "kind": "Namespace",
+    "metadata": {
+        "creationTimestamp": "2025-07-20T15:59:42Z",
+        "deletionTimestamp": "2025-07-20T16:22:05Z",
+        "labels": {
+            "kubernetes.io/metadata.name": "calico-system",
+            "name": "calico-system",
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/enforce-version": "latest"
+        },
+        "name": "calico-system",
+        "ownerReferences": [
+            {
+                "apiVersion": "operator.tigera.io/v1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "Installation",
+                "name": "default",
+                "uid": "7005270b-95d8-45fb-94f4-d641ff0664cf"
+            }
+        ],
+        "resourceVersion": "470841",
+        "uid": "39d81e59-55f9-4709-b1fa-5b7d1245af2f"
+    },
+    "spec": {},
+    "status": {
+        "conditions": [
+            {
+                "lastTransitionTime": "2025-07-20T16:22:10Z",
+                "message": "All resources successfully discovered",
+                "reason": "ResourcesDiscovered",
+                "status": "False",
+                "type": "NamespaceDeletionDiscoveryFailure"
+            },
+            {
+                "lastTransitionTime": "2025-07-20T16:22:10Z",
+                "message": "All legacy kube types successfully parsed",
+                "reason": "ParsedGroupVersions",
+                "status": "False",
+                "type": "NamespaceDeletionGroupVersionParsingFailure"
+            },
+            {
+                "lastTransitionTime": "2025-07-20T16:22:10Z",
+                "message": "All content successfully deleted, may be waiting on finalization",
+                "reason": "ContentDeleted",
+                "status": "False",
+                "type": "NamespaceDeletionContentFailure"
+            },
+            {
+                "lastTransitionTime": "2025-07-20T16:22:16Z",
+                "message": "Some resources are remaining: serviceaccounts. has 2 resource instances",
+                "reason": "SomeResourcesRemain",
+                "status": "True",
+                "type": "NamespaceContentRemaining"
+            },
+            {
+                "lastTransitionTime": "2025-07-20T16:22:16Z",
+                "message": "Some content in the namespace has finalizers remaining: tigera.io/cni-protector in 2 resource instances",
+                "reason": "SomeFinalizersRemain",
+                "status": "True",
+                "type": "NamespaceFinalizersRemaining"
+            }
+        ],
+        "phase": "Terminating"
+    }
+}
