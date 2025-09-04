@@ -4,7 +4,7 @@ pipeline {
   environment {
     REGISTRY = "192.168.86.75:80/library"
     IMAGE_NAME = "myapp"
-    SSH_CRED_ID = "git-ssh-key"        // 你在 Jenkins 增加的 SSH 私钥 ID
+    SSH_CRED_ID = "github-ssh"        // 你在 Jenkins 增加的 SSH 私钥 ID
     HARBOR_CRED_ID = "harbor-cred"    // 你在 Jenkins 增加的 Harbor 凭证 ID
     KUBECONFIG = "/var/jenkins_home/.kube/config"
     CHART_PATH = "charts/myapp"
@@ -44,8 +44,8 @@ pipeline {
             // update values.yaml using yq (must be present in the Jenkins container)
             sh """
               yq eval -i '.image.tag = strenv(GIT_SHA)' ${CHART_PATH}/values.yaml
-              git config user.email "jenkins@example.com"
-              git config user.name "jenkins-ci"
+              git config user.email "870692011@qq.com"
+              git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
               git commit -m "ci: bump myapp image to ${GIT_SHA}" || echo "no changes to commit"
               git push origin HEAD:main
