@@ -1,0 +1,15 @@
+replicaCount: 1
+
+image:
+  repository: "192.168.86.75:80/library/myapp"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
