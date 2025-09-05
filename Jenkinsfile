@@ -4,7 +4,7 @@ pipeline {
   environment {
     REGISTRY = "192.168.86.75:80/library"
     IMAGE_NAME = "myapp"
-    SSH_CRED_ID = "git-ssh-key"        // 你在 Jenkins 增加的 SSH 私钥 ID
+    SSH_CRED_ID = "github-ssh"        // 你在 Jenkins 增加的 SSH 私钥 ID
     HARBOR_CRED_ID = "harbor-cred"    // 你在 Jenkins 增加的 Harbor 凭证 ID
     KUBECONFIG = "/var/jenkins_home/.kube/config"
     CHART_PATH = "charts/myapp"
@@ -22,8 +22,8 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: env.HARBOR_CRED_ID, usernameVariable: 'H_USER', passwordVariable: 'H_PASS')]) {
           script {
             // use git short sha as the tag
-            GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            IMAGE = "${REGISTRY}/${IMAGE_NAME}:${GIT_SHA}"
+            def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+            def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${GIT_SHA}"
             sh """
               echo "Building image ${IMAGE}"
               docker build -t ${IMAGE} apps/myapp
@@ -40,12 +40,25 @@ pipeline {
         // use SSH credential to push back to repo
         sshagent([env.SSH_CRED_ID]) {
           script {
-            GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            // update values.yaml using yq (must be present in the Jenkins container)
+            def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+            // update values.yaml using yq with shell interpolation (ensures GIT_SHA is passed)
             sh """
-              yq eval -i '.image.tag = strenv(GIT_SHA)' ${CHART_PATH}/values.yaml
-              git config user.email "jenkins@example.com"
-              git config user.name "jenkins-ci"
+              echo "DEBUG: updating chart with tag=${GIT_SHA}"
+              # ensure yq exists; fallback to sed if not
+              if command -v yq >/dev/null 2>&1; then
+                # use shell interpolation so yq gets the value directly
+                yq eval -i ".image.tag = \\\"${GIT_SHA}\\\"" ${CHART_PATH}/values.yaml
+              else
+                # safe sed: replace the tag line (assumes indentation "  tag: ...")
+                sed -i -E "s/^([[:space:]]*tag:).*/\\1 \\\"${GIT_SHA}\\\"/" ${CHART_PATH}/values.yaml
+              fi
+
+              echo "----- values.yaml AFTER update -----"
+              sed -n '1,120p' ${CHART_PATH}/values.yaml
+              echo "------------------------------------"
+
+              git config user.email "870692011@qq.com"
+              git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
               git commit -m "ci: bump myapp image to ${GIT_SHA}" || echo "no changes to commit"
               git push origin HEAD:main
@@ -75,6 +88,7 @@ pipeline {
 
     stage('Smoke Test') {
       steps {
+        // basic: list pods; you can extend to curl if you expose service
         sh "kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide"
       }
     }
@@ -88,3 +102,4 @@ pipeline {
     }
   }
 }
+
