@@ -4,8 +4,8 @@ pipeline {
   environment {
     REGISTRY = "192.168.86.75:80/library"
     IMAGE_NAME = "myapp"
-    SSH_CRED_ID = "github-ssh"        // 你在 Jenkins 增加的 SSH 私钥 ID
-    HARBOR_CRED_ID = "harbor-cred"    // 你在 Jenkins 增加的 Harbor 凭证 ID
+    SSH_CRED_ID = "github-ssh"
+    HARBOR_CRED_ID = "harbor-cred"
     KUBECONFIG = "/var/jenkins_home/.kube/config"
     CHART_PATH = "charts/myapp"
   }
@@ -14,6 +14,16 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh """
+          cd apps/myapp
+          pip install -r requirements.txt pytest
+          pytest -v
+        """
       }
     }
 
@@ -39,21 +49,17 @@ pipeline {
         sshagent([env.SSH_CRED_ID]) {
           script {
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            sh """
-              set -eux
+            sh """set -eux
               echo "DEBUG: updating chart with tag=${GIT_SHA}"
               if command -v yq >/dev/null 2>&1; then
-                yq eval -i '.image.tag = "${GIT_SHA}"' ${CHART_PATH}/values.yaml
+                yq eval -i '.image.tag = \"${GIT_SHA}\"' ${CHART_PATH}/values.yaml
               else
-                sed -i -E 's/^(  tag:).*/\\1 "${GIT_SHA}"/' ${CHART_PATH}/values.yaml
+                sed -i -E 's/^([[:space:]]*tag:).*/\\1 \"${GIT_SHA}\"/' ${CHART_PATH}/values.yaml
               fi
-              echo '----- values.yaml AFTER update -----'
-              sed -n '1,120p' ${CHART_PATH}/values.yaml
-              echo '------------------------------------'
               git config user.email "870692011@qq.com"
               git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
-              git commit -m "ci: bump myapp image to ${GIT_SHA}" || true
+              git commit -m 'ci: bump myapp image to ${GIT_SHA}' || true
               git push origin HEAD:main
             """
           }
@@ -64,25 +70,24 @@ pipeline {
     stage('Trigger ArgoCD Refresh') {
       steps {
         sh """
-          kubectl --kubeconfig=\$KUBECONFIG patch application myapp -n argocd \
-            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' \
-            --type=merge || true
+          kubectl --kubeconfig=${KUBECONFIG} patch application myapp -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' --type=merge || true
         """
       }
     }
 
     stage('Wait for Deployment') {
       steps {
-        sh "kubectl --kubeconfig=\$KUBECONFIG rollout status deployment/myapp --namespace=default --timeout=180s || true"
+        sh """
+          kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/myapp --namespace=default --timeout=180s || true
+        """
       }
     }
 
     stage('HTTP Smoke Test') {
       steps {
-        sh """#!/bin/bash
-          set -eux
-          kubectl --kubeconfig=\$KUBECONFIG port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
-          PF_PID=\$!
+        sh """set -eux
+          kubectl --kubeconfig=${KUBECONFIG} port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
+          PF_PID=$!
           sleep 2
           if curl -sS --fail http://127.0.0.1:8080/health; then
             echo "health OK"
@@ -90,10 +95,10 @@ pipeline {
             echo "root OK"
           else
             echo "app did not respond" >&2
-            kill \$PF_PID || true
+            kill $PF_PID || true
             exit 1
           fi
-          kill \$PF_PID || true
+          kill $PF_PID || true
         """
       }
     }
@@ -101,8 +106,8 @@ pipeline {
 
   post {
     always {
-      sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=\$KUBECONFIG get pods -l app=myapp -n default -o wide || true"
-      sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' \${CHART_PATH}/values.yaml || true"
+      sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide || true"
+      sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' ${CHART_PATH}/values.yaml || true"
     }
   }
 }
