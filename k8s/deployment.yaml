@@ -14,41 +14,13 @@ spec:
       labels:
         app: myapp
     spec:
+      nodeName: k8s-harbor
       containers:
       - name: myapp
-        image: 192.168.86.75:80/library/myapp:REPLACE_WITH_TAG
+        image: 192.168.86.75:80/library/myapp:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
-
-        # 健康检查：readiness 用于判断是否可以接流量（Service 后端）
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 2
-          failureThreshold: 3
-
-        # 存活检查：liveness 用于判断容器是否需要重启
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 15
-          periodSeconds: 10
-          timeoutSeconds: 2
-          failureThreshold: 3
-
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "256Mi"
-
 ---
 apiVersion: v1
 kind: Service
@@ -62,4 +34,3 @@ spec:
     port: 80
     targetPort: 8080
   type: ClusterIP
-
