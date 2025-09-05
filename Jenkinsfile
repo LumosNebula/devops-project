@@ -43,6 +43,7 @@ pipeline {
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
             // update values.yaml using yq with shell interpolation (ensures GIT_SHA is passed)
             sh """
+<<<<<<< HEAD
               echo "DEBUG: updating chart with tag=${GIT_SHA}"
               # ensure yq exists; fallback to sed if not
               if command -v yq >/dev/null 2>&1; then
@@ -57,6 +58,9 @@ pipeline {
               sed -n '1,120p' ${CHART_PATH}/values.yaml
               echo "------------------------------------"
 
+=======
+              yq eval -i '.image.tag = strenv(GIT_SHA)' ${CHART_PATH}/values.yaml
+>>>>>>> f6e5322cf409a7ecd15a2cc63adce20fede0a6c8
               git config user.email "870692011@qq.com"
               git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
