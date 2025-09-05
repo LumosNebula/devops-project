@@ -21,7 +21,6 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: env.HARBOR_CRED_ID, usernameVariable: 'H_USER', passwordVariable: 'H_PASS')]) {
           script {
-            // use git short sha as the tag
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
             def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${GIT_SHA}"
             sh """
@@ -37,34 +36,26 @@ pipeline {
 
     stage('Update Helm Chart and Push to Git') {
       steps {
-        // use SSH credential to push back to repo
         sshagent([env.SSH_CRED_ID]) {
           script {
+            // capture git sha in Groovy var
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            // update values.yaml using yq with shell interpolation (ensures GIT_SHA is passed)
-            sh """
-<<<<<<< HEAD
+
+            // Use a single-line shell command to avoid multi-line quoting issues
+            sh """set -eux
               echo "DEBUG: updating chart with tag=${GIT_SHA}"
-              # ensure yq exists; fallback to sed if not
               if command -v yq >/dev/null 2>&1; then
-                # use shell interpolation so yq gets the value directly
-                yq eval -i ".image.tag = \\\"${GIT_SHA}\\\"" ${CHART_PATH}/values.yaml
+                yq eval -i '.image.tag = \"${GIT_SHA}\"' ${CHART_PATH}/values.yaml
               else
-                # safe sed: replace the tag line (assumes indentation "  tag: ...")
-                sed -i -E "s/^([[:space:]]*tag:).*/\\1 \\\"${GIT_SHA}\\\"/" ${CHART_PATH}/values.yaml
+                sed -i -E 's/^([[:space:]]*tag:).*/\\1 \"${GIT_SHA}\"/' ${CHART_PATH}/values.yaml
               fi
-
-              echo "----- values.yaml AFTER update -----"
+              echo '----- values.yaml AFTER update -----'
               sed -n '1,120p' ${CHART_PATH}/values.yaml
-              echo "------------------------------------"
-
-=======
-              yq eval -i '.image.tag = strenv(GIT_SHA)' ${CHART_PATH}/values.yaml
->>>>>>> f6e5322cf409a7ecd15a2cc63adce20fede0a6c8
+              echo '------------------------------------'
               git config user.email "870692011@qq.com"
               git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
-              git commit -m "ci: bump myapp image to ${GIT_SHA}" || echo "no changes to commit"
+              git commit -m 'ci: bump myapp image to ${GIT_SHA}' || true
               git push origin HEAD:main
             """
           }
@@ -74,7 +65,6 @@ pipeline {
 
     stage('Trigger ArgoCD Refresh') {
       steps {
-        // force ArgoCD to re-evaluate repo (requires kubeconfig mounted)
         sh """
           kubectl --kubeconfig=${KUBECONFIG} patch application myapp -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' --type=merge || true
         """
@@ -83,7 +73,6 @@ pipeline {
 
     stage('Wait for Deployment') {
       steps {
-        // wait for rollout to complete (up to 3 minutes)
         sh """
           kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/myapp --namespace=default --timeout=180s || true
         """
@@ -92,7 +81,6 @@ pipeline {
 
     stage('Smoke Test') {
       steps {
-        // basic: list pods; you can extend to curl if you expose service
         sh "kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide"
       }
     }
@@ -100,7 +88,6 @@ pipeline {
 
   post {
     always {
-      // print summary for easier debugging
       sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide || true"
       sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' ${CHART_PATH}/values.yaml || true"
     }
