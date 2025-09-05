@@ -28,7 +28,7 @@ pipeline {
                 sh '''
 #!/bin/bash
 python3 -m venv venv
-source venv/bin/activate
+. venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 python -m unittest discover
@@ -63,27 +63,21 @@ git push origin main
         stage('Trigger ArgoCD Refresh') {
             steps {
                 echo 'Triggering ArgoCD refresh...'
-                sh '''
-argocd app refresh myapp
-'''
+                sh 'argocd app refresh myapp'
             }
         }
 
         stage('Wait for Deployment') {
             steps {
                 echo 'Waiting for deployment to complete...'
-                sh '''
-kubectl --kubeconfig=$KUBECONFIG rollout status deployment/myapp -n default
-'''
+                sh 'kubectl --kubeconfig=$KUBECONFIG rollout status deployment/myapp -n default'
             }
         }
 
         stage('HTTP Smoke Test') {
             steps {
                 echo 'Running HTTP smoke test...'
-                sh '''
-curl -f http://myapp.default.svc.cluster.local/health
-'''
+                sh 'curl -f http://myapp.default.svc.cluster.local/health'
             }
         }
     }
