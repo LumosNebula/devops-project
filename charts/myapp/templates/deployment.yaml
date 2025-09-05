@@ -14,9 +14,41 @@ spec:
       labels:
         app: {{ include "myapp.name" . }}
     spec:
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+      {{- end }}
       containers:
         - name: {{ include "myapp.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           ports:
-            - containerPort: 8080
+            - containerPort: {{ .Values.service.targetPort | default 8080 }}
+
+          # readiness probe（判断是否可接流量）
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path | default "/health" | quote }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 2 }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
+
+          # liveness probe（判断容器是否存活，需要重启）
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path | default "/health" | quote }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 2 }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+

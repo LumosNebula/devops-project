@@ -1,12 +1,37 @@
 replicaCount: 1
+
 image:
   repository: "192.168.86.75:80/library/myapp"
-  tag: "ea71128"
+  tag: "REPLACE_BY_CI"
   pullPolicy: IfNotPresent
+
 service:
   type: ClusterIP
   port: 80
-resources: {}
+  targetPort: 8080
+
+readinessProbe:
+  path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+livenessProbe:
+  path: /health
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
