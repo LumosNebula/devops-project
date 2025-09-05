@@ -19,14 +19,14 @@ pipeline {
 
     stage('Test') {
       steps {
-        // 在独立的 python 容器中运行 pytest，挂载整个 workspace 到容器，避免路径不一致
-        sh '''#!/bin/sh
+        // 在独立的 python 容器中运行 pytest，挂载整个 workspace 到容器
+        sh """#!/bin/sh
           set -eux
-          WORKSPACE_DIR=$(pwd)
-          echo "Running tests inside python container, workspace: ${WORKSPACE_DIR}"
-          docker run --rm -v "${WORKSPACE_DIR}":/workspace -w /workspace python:3.10-slim \
-            sh -lc "pip install --upgrade pip && pip install -r apps/myapp/requirements.txt && pytest -q apps/myapp"
-        '''
+          WORKSPACE_DIR=\$(pwd)
+          echo "Running tests inside python container, workspace: \${WORKSPACE_DIR}"
+          docker run --rm -v "\${WORKSPACE_DIR}":/workspace -w /workspace python:3.10-slim \
+            /bin/sh -c 'cd /workspace/apps/myapp && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && pytest -q'
+        """
       }
     }
 
@@ -52,10 +52,10 @@ pipeline {
       steps {
         sshagent([env.SSH_CRED_ID]) {
           script {
-            sh '''#!/bin/sh
+            sh """#!/bin/sh
               set -eux
-              GIT_SHA=$(git rev-parse --short HEAD)
-              echo "DEBUG: updating chart with tag=${GIT_SHA}"
+              GIT_SHA=\$(git rev-parse --short HEAD)
+              echo "DEBUG: updating chart with tag=\${GIT_SHA}"
               if command -v yq >/dev/null 2>&1; then
                 yq eval -i '.image.tag = "'"${GIT_SHA}"'"' ${CHART_PATH}/values.yaml
               else
@@ -67,9 +67,9 @@ pipeline {
               git config user.email "870692011@qq.com"
               git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
-              git commit -m "ci: bump myapp image to ${GIT_SHA}" || true
+              git commit -m "ci: bump myapp image to \${GIT_SHA}" || true
               git push origin HEAD:main
-            '''
+            """
           }
         }
       }
@@ -77,27 +77,27 @@ pipeline {
 
     stage('Trigger ArgoCD Refresh') {
       steps {
-        sh '''#!/bin/sh
+        sh """#!/bin/sh
           set -eux
           kubectl --kubeconfig="$KUBECONFIG" patch application myapp -n argocd \
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' \
             --type=merge || true
-        '''
+        """
       }
     }
 
     stage('Wait for Deployment') {
       steps {
-        sh '''#!/bin/sh
+        sh """#!/bin/sh
           set -eux
           kubectl --kubeconfig="$KUBECONFIG" rollout status deployment/myapp --namespace=default --timeout=180s || true
-        '''
+        """
       }
     }
 
     stage('HTTP Smoke Test') {
       steps {
-        sh '''#!/bin/sh
+        sh """#!/bin/sh
           set -eux
           kubectl --kubeconfig="$KUBECONFIG" port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
           PF_PID=$!
@@ -112,7 +112,7 @@ pipeline {
             exit 1
           fi
           kill -0 $PF_PID >/dev/null 2>&1 && kill $PF_PID || true
-        '''
+        """
       }
     }
   }
