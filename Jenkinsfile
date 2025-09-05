@@ -28,7 +28,6 @@ pipeline {
                     echo "Running unit tests..."
                     sh "python3 -m pip install --upgrade pip"
                     sh "python3 -m pip install -r apps/myapp/requirements.txt"
-                    // 可以加上具体的测试命令，例如 pytest
                     sh "pytest apps/myapp/tests"
                 }
             }
@@ -38,9 +37,9 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker build -t $REGISTRY/library/$IMAGE_NAME:latest apps/myapp
-                        echo $HARBOR_PASS | docker login $REGISTRY -u $HARBOR_USER --password-stdin
-                        docker push $REGISTRY/library/$IMAGE_NAME:latest
+                        docker build -t ${REGISTRY}/library/${IMAGE_NAME}:latest apps/myapp
+                        echo ${HARBOR_PASS} | docker login ${REGISTRY} -u ${HARBOR_USER} --password-stdin
+                        docker push ${REGISTRY}/library/${IMAGE_NAME}:latest
                     """
                 }
             }
@@ -50,12 +49,12 @@ pipeline {
             steps {
                 script {
                     sh """
-                        sed -i "s|repository: .*|repository: '$REGISTRY/library/$IMAGE_NAME'|g" charts/myapp/values.yaml
+                        sed -i "s|repository: .*|repository: '${REGISTRY}/library/${IMAGE_NAME}'|g" charts/myapp/values.yaml
                         sed -i "s|tag: .*|tag: 'latest'|g" charts/myapp/values.yaml
                         git config user.name "jenkins"
                         git config user.email "jenkins@example.com"
                         git add charts/myapp/values.yaml
-                        git commit -m "Update Helm values for $IMAGE_NAME"
+                        git commit -m "Update Helm values for ${IMAGE_NAME}"
                         git push origin main
                     """
                 }
@@ -65,7 +64,7 @@ pipeline {
         stage('Trigger ArgoCD Refresh') {
             steps {
                 script {
-                    sh "argocd app sync myapp"
+                    sh "argocd app sync ${IMAGE_NAME}"
                 }
             }
         }
@@ -73,9 +72,7 @@ pipeline {
         stage('Wait for Deployment') {
             steps {
                 script {
-                    sh """
-                        kubectl --kubeconfig=$KUBECONFIG rollout status deployment/$IMAGE_NAME -n default
-                    """
+                    sh "kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/${IMAGE_NAME} -n default"
                 }
             }
         }
@@ -84,9 +81,9 @@ pipeline {
             steps {
                 script {
                     sh """
-                        STATUS_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://myapp.default.svc.cluster.local/health)
-                        if [ "$STATUS_CODE" != "200" ]; then
-                            echo "Smoke test failed with status $STATUS_CODE"
+                        STATUS_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://${IMAGE_NAME}.default.svc.cluster.local/health)
+                        if [ "\${STATUS_CODE}" != "200" ]; then
+                            echo "Smoke test failed with status \${STATUS_CODE}"
                             exit 1
                         fi
                     """
@@ -98,7 +95,7 @@ pipeline {
     post {
         always {
             echo "=== K8S PODS ==="
-            sh "kubectl --kubeconfig=$KUBECONFIG get pods -l app=$IMAGE_NAME -n default -o wide"
+            sh "kubectl --kubeconfig=${KUBECONFIG} get pods -l app=${IMAGE_NAME} -n default -o wide"
             echo "=== HELM VALUES ==="
             sh "sed -n 1,120p charts/myapp/values.yaml"
         }
