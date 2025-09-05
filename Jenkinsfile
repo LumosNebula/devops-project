@@ -30,8 +30,10 @@ pipeline {
 python3 -m venv venv
 . venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
-python -m unittest discover
+if [ -f requirements.txt ]; then
+    pip install -r requirements.txt
+fi
+python -m unittest discover || exit 1
 '''
             }
         }
@@ -54,8 +56,8 @@ sed -i "s|tag: .*|tag: \"$GIT_COMMIT\"|" charts/myapp/values.yaml
 git config user.name "jenkins"
 git config user.email "jenkins@example.com"
 git add charts/myapp/values.yaml
-git commit -m "Update image tag to $GIT_COMMIT"
-git push origin main
+git commit -m "Update image tag to $GIT_COMMIT" || true
+git push origin main || true
 '''
             }
         }
@@ -63,7 +65,7 @@ git push origin main
         stage('Trigger ArgoCD Refresh') {
             steps {
                 echo 'Triggering ArgoCD refresh...'
-                sh 'argocd app refresh myapp'
+                sh 'argocd app refresh myapp || true'
             }
         }
 
