@@ -46,7 +46,7 @@ pipeline {
                 script {
                     IMAGE_TAG = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
                     echo "Updating Helm chart with image tag: ${IMAGE_TAG}"
-                    sh "sed -i s|tag: .*|tag: ${IMAGE_TAG}| charts/myapp/values.yaml"
+                    sh "sed -i 's|tag: .*|tag: ${IMAGE_TAG}|' charts/myapp/values.yaml"
 
                     sh '''
                         git config user.email "jenkins@example.com"
