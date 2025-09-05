@@ -19,15 +19,16 @@ pipeline {
 
     stage('Test') {
       steps {
+        // 在独立 python 容器中运行测试，使用绝对路径并打印目录以便诊断
         sh '''#!/bin/sh
           set -eux
-          echo "Workspace (from env): ${env.WORKSPACE}"
-          echo "Top-level of workspace:"
-          ls -la "${env.WORKSPACE}" || true
-          echo "apps/myapp listing:"
-          ls -la "${env.WORKSPACE}/apps/myapp" || true
+          echo "WORKSPACE env: $WORKSPACE"
+          echo "Listing workspace top-level:"
+          ls -la "$WORKSPACE" || true
+          echo "Listing apps/myapp directory:"
+          ls -la "$WORKSPACE/apps/myapp" || true
 
-          docker run --rm -v "${env.WORKSPACE}":/workspace -w /workspace python:3.10-slim \
+          docker run --rm -v "$WORKSPACE":/workspace -w /workspace python:3.10-slim \
             /bin/sh -c 'echo "Inside container, pwd=$(pwd)"; ls -la /workspace || true; ls -la /workspace/apps/myapp || true; \
                         python -m pip install --upgrade pip && \
                         python -m pip install -r /workspace/apps/myapp/requirements.txt && \
@@ -42,12 +43,12 @@ pipeline {
           script {
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
             def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${GIT_SHA}"
-            sh """
+            sh '''
               echo "Building image ${IMAGE}"
               docker build -t ${IMAGE} apps/myapp
-              echo \$H_PASS | docker login 192.168.86.75:80 -u \$H_USER --password-stdin
+              echo $H_PASS | docker login 192.168.86.75:80 -u $H_USER --password-stdin
               docker push ${IMAGE}
-            """
+            '''
             env.IMAGE_TAG = GIT_SHA
           }
         }
@@ -103,10 +104,11 @@ pipeline {
 
     stage('HTTP Smoke Test') {
       steps {
+        // 在单引号包裹的 sh 中，使用 $PF_PID 等 shell 变量让 shell 自己展开
         sh '''#!/bin/sh
           set -eux
           kubectl --kubeconfig="$KUBECONFIG" port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
-          PF_PID=\$!
+          PF_PID=$!
           sleep 2
           if curl -sS --fail http://127.0.0.1:8080/health; then
             echo "health OK"
@@ -114,10 +116,10 @@ pipeline {
             echo "root OK"
           else
             echo "app did not respond" >&2
-            kill -0 \$PF_PID >/dev/null 2>&1 && kill \$PF_PID || true
+            kill -0 $PF_PID >/dev/null 2>&1 && kill $PF_PID || true
             exit 1
           fi
-          kill -0 \$PF_PID >/dev/null 2>&1 && kill \$PF_PID || true
+          kill -0 $PF_PID >/dev/null 2>&1 && kill $PF_PID || true
         '''
       }
     }
@@ -125,8 +127,12 @@ pipeline {
 
   post {
     always {
-      sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=$KUBECONFIG get pods -l app=myapp -n default -o wide || true"
-      sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' $CHART_PATH/values.yaml || true"
+      sh '''#!/bin/sh
+        echo '=== K8S PODS ==='
+        kubectl --kubeconfig=$KUBECONFIG get pods -l app=myapp -n default -o wide || true
+        echo '=== HELM VALUES ==='
+        sed -n '1,120p' $CHART_PATH/values.yaml || true
+      '''
     }
   }
 }
