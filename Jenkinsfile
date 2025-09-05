@@ -1,47 +1,46 @@
 pipeline {
-    agent any  // 在任何可用节点上运行
+    agent any
 
     environment {
         REGISTRY = "192.168.86.75:80"
-        IMAGE_NAME = "myapp"
-        HARBOR_CREDENTIALS = credentials('harbor-password') // Harbor 密码凭证
+        HARBOR_USER = "admin"
+        HARBOR_PASS = "niuniu"
         KUBECONFIG = "/var/jenkins_home/.kube/config"
+        IMAGE_NAME = "myapp"
     }
 
     stages {
         stage('Checkout SCM') {
             steps {
-                checkout([$class: 'GitSCM', 
+                checkout([$class: 'GitSCM',
                     branches: [[name: 'main']],
-                    doGenerateSubmoduleConfigurations: false,
-                    extensions: [],
-                    userRemoteConfigs: [[url: 'git@github.com:LumosNebula/devops-project.git', credentialsId: 'github-ssh']]
+                    userRemoteConfigs: [[
+                        url: 'git@github.com:LumosNebula/devops-project.git',
+                        credentialsId: 'github-ssh'
+                    ]]
                 ])
             }
         }
 
         stage('Test') {
             steps {
-                echo "Running unit tests..."
-                // 使用 python3 -m pip 避免找不到 pip
-                sh 'python3 -m pip install --upgrade pip'
-                sh 'python3 -m pip install -r apps/myapp/requirements.txt'
-                // 可以加你的单元测试命令
-                sh 'pytest apps/myapp/tests || true' 
+                script {
+                    echo "Running unit tests..."
+                    sh "python3 -m pip install --upgrade pip"
+                    sh "python3 -m pip install -r apps/myapp/requirements.txt"
+                    // 可以加上具体的测试命令，例如 pytest
+                    sh "pytest apps/myapp/tests"
+                }
             }
         }
 
         stage('Build & Push Image') {
             steps {
                 script {
-                    def commitHash = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    def imageTag = "${commitHash}"
-                    env.IMAGE_TAG = imageTag
-
                     sh """
-                    docker build -t ${REGISTRY}/library/${IMAGE_NAME}:${IMAGE_TAG} apps/myapp
-                    echo ${HARBOR_CREDENTIALS_PSW} | docker login ${REGISTRY} -u ${HARBOR_CREDENTIALS_USR} --password-stdin
-                    docker push ${REGISTRY}/library/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker build -t $REGISTRY/library/$IMAGE_NAME:latest apps/myapp
+                        echo $HARBOR_PASS | docker login $REGISTRY -u $HARBOR_USER --password-stdin
+                        docker push $REGISTRY/library/$IMAGE_NAME:latest
                     """
                 }
             }
@@ -51,12 +50,13 @@ pipeline {
             steps {
                 script {
                     sh """
-                    sed -i 's|tag:.*|tag: "${IMAGE_TAG}"|' charts/myapp/values.yaml
-                    git config user.email "jenkins@example.com"
-                    git config user.name "jenkins"
-                    git add charts/myapp/values.yaml
-                    git commit -m "Update helm chart image tag to ${IMAGE_TAG}" || echo "No changes to commit"
-                    git push origin main
+                        sed -i "s|repository: .*|repository: '$REGISTRY/library/$IMAGE_NAME'|g" charts/myapp/values.yaml
+                        sed -i "s|tag: .*|tag: 'latest'|g" charts/myapp/values.yaml
+                        git config user.name "jenkins"
+                        git config user.email "jenkins@example.com"
+                        git add charts/myapp/values.yaml
+                        git commit -m "Update Helm values for $IMAGE_NAME"
+                        git push origin main
                     """
                 }
             }
@@ -64,24 +64,33 @@ pipeline {
 
         stage('Trigger ArgoCD Refresh') {
             steps {
-                sh """
-                curl -X POST http://argocd.example.com/api/v1/applications/myapp/sync \
-                     -H "Authorization: Bearer ${ARGOCD_TOKEN}"
-                """
+                script {
+                    sh "argocd app sync myapp"
+                }
             }
         }
 
         stage('Wait for Deployment') {
             steps {
-                echo "Waiting for deployment to complete..."
-                sh "kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/myapp -n default"
+                script {
+                    sh """
+                        kubectl --kubeconfig=$KUBECONFIG rollout status deployment/$IMAGE_NAME -n default
+                    """
+                }
             }
         }
 
         stage('HTTP Smoke Test') {
             steps {
-                echo "Running HTTP smoke test..."
-                sh "curl -f http://myapp.example.com/health || exit 1"
+                script {
+                    sh """
+                        STATUS_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://myapp.default.svc.cluster.local/health)
+                        if [ "$STATUS_CODE" != "200" ]; then
+                            echo "Smoke test failed with status $STATUS_CODE"
+                            exit 1
+                        fi
+                    """
+                }
             }
         }
     }
@@ -89,13 +98,15 @@ pipeline {
     post {
         always {
             echo "=== K8S PODS ==="
-            sh "kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide"
+            sh "kubectl --kubeconfig=$KUBECONFIG get pods -l app=$IMAGE_NAME -n default -o wide"
             echo "=== HELM VALUES ==="
             sh "sed -n 1,120p charts/myapp/values.yaml"
         }
+
         success {
             echo "Pipeline completed successfully!"
         }
+
         failure {
             echo "Pipeline failed!"
         }
