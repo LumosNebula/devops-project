@@ -38,16 +38,14 @@ pipeline {
       steps {
         sshagent([env.SSH_CRED_ID]) {
           script {
-            // capture git sha in Groovy var
             def GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-
-            // Use a single-line shell command to avoid multi-line quoting issues
-            sh """set -eux
+            sh """
+              set -eux
               echo "DEBUG: updating chart with tag=${GIT_SHA}"
               if command -v yq >/dev/null 2>&1; then
-                yq eval -i '.image.tag = \"${GIT_SHA}\"' ${CHART_PATH}/values.yaml
+                yq eval -i '.image.tag = "${GIT_SHA}"' ${CHART_PATH}/values.yaml
               else
-                sed -i -E 's/^([[:space:]]*tag:).*/\\1 \"${GIT_SHA}\"/' ${CHART_PATH}/values.yaml
+                sed -i -E 's/^(  tag:).*/\\1 "${GIT_SHA}"/' ${CHART_PATH}/values.yaml
               fi
               echo '----- values.yaml AFTER update -----'
               sed -n '1,120p' ${CHART_PATH}/values.yaml
@@ -55,7 +53,7 @@ pipeline {
               git config user.email "870692011@qq.com"
               git config user.name "niuniu"
               git add ${CHART_PATH}/values.yaml
-              git commit -m 'ci: bump myapp image to ${GIT_SHA}' || true
+              git commit -m "ci: bump myapp image to ${GIT_SHA}" || true
               git push origin HEAD:main
             """
           }
@@ -66,39 +64,36 @@ pipeline {
     stage('Trigger ArgoCD Refresh') {
       steps {
         sh """
-          kubectl --kubeconfig=${KUBECONFIG} patch application myapp -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' --type=merge || true
+          kubectl --kubeconfig=\$KUBECONFIG patch application myapp -n argocd \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"manual"}}}' \
+            --type=merge || true
         """
       }
     }
 
     stage('Wait for Deployment') {
       steps {
-        sh """
-          kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/myapp --namespace=default --timeout=180s || true
-        """
+        sh "kubectl --kubeconfig=\$KUBECONFIG rollout status deployment/myapp --namespace=default --timeout=180s || true"
       }
     }
 
     stage('HTTP Smoke Test') {
       steps {
-        sh """set -eux
-          # background port-forward
-          kubectl --kubeconfig=${KUBECONFIG} port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
-          PF_PID=$!
-          # wait a little for forward to be ready
-          sleep 1
-          # try health endpoint first, fallback to root
+        sh """#!/bin/bash
+          set -eux
+          kubectl --kubeconfig=\$KUBECONFIG port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
+          PF_PID=\$!
+          sleep 2
           if curl -sS --fail http://127.0.0.1:8080/health; then
             echo "health OK"
           elif curl -sS --fail http://127.0.0.1:8080/; then
             echo "root OK"
           else
             echo "app did not respond" >&2
-            kill $PF_PID || true
+            kill \$PF_PID || true
             exit 1
           fi
-          # cleanup
-          kill $PF_PID || true
+          kill \$PF_PID || true
         """
       }
     }
@@ -106,8 +101,9 @@ pipeline {
 
   post {
     always {
-      sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide || true"
-      sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' ${CHART_PATH}/values.yaml || true"
+      sh "echo '=== K8S PODS ===' ; kubectl --kubeconfig=\$KUBECONFIG get pods -l app=myapp -n default -o wide || true"
+      sh "echo '=== HELM VALUES ===' ; sed -n '1,120p' \${CHART_PATH}/values.yaml || true"
     }
   }
 }
+
