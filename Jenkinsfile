@@ -79,9 +79,27 @@ pipeline {
       }
     }
 
-    stage('Smoke Test') {
+    stage('HTTP Smoke Test') {
       steps {
-        sh "kubectl --kubeconfig=${KUBECONFIG} get pods -l app=myapp -n default -o wide"
+        sh """set -eux
+          # background port-forward
+          kubectl --kubeconfig=${KUBECONFIG} port-forward svc/myapp-svc 8080:80 -n default >/dev/null 2>&1 &
+          PF_PID=$!
+          # wait a little for forward to be ready
+          sleep 1
+          # try health endpoint first, fallback to root
+          if curl -sS --fail http://127.0.0.1:8080/health; then
+            echo "health OK"
+          elif curl -sS --fail http://127.0.0.1:8080/; then
+            echo "root OK"
+          else
+            echo "app did not respond" >&2
+            kill $PF_PID || true
+            exit 1
+          fi
+          # cleanup
+          kill $PF_PID || true
+        """
       }
     }
   }
@@ -93,4 +111,3 @@ pipeline {
     }
   }
 }
-
