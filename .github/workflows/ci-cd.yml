@@ -11,16 +11,15 @@ jobs:
     runs-on: [self-hosted, linux, docker]
     env:
       IMAGE_REPO: 192.168.86.75:80/library/myapp
-
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
 
       - name: setup-python-venv
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-venv
+          apt-get update
+          apt-get install -y python3-venv
           python3 -m venv venv
           . venv/bin/activate
           python -m pip install --upgrade pip
@@ -63,12 +62,7 @@ jobs:
           fi
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-
-          # 🔥 确保 remote 一定带 token
-          git remote remove origin
-          git remote add origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
-          git remote -v
-
+          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
           git fetch origin
           git checkout -B main
           sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
@@ -86,8 +80,7 @@ jobs:
             exit 0
           fi
           APP_NAME="myapp"
-          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
-            "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
+          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
 
       - name: apply-manifests-via-kubeconfig
         env:
