@@ -12,7 +12,7 @@ jobs:
     env:
       IMAGE_REPO: 192.168.86.75:80/library/myapp
     steps:
-      # Checkout 使用 SSH
+      #  Checkout 使用 SSH
       - name: Checkout repository via SSH
         uses: actions/checkout@v4
         with:
