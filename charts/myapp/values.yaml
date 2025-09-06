@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
   repository: "192.168.86.75:80/library/myapp"
-  tag: 30a0a2f39820
+  tag: b0cb6e70233f
   pullPolicy: IfNotPresent
 service:
   type: ClusterIP
