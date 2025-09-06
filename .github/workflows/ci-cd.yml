@@ -13,7 +13,8 @@ jobs:
       IMAGE_REPO: 192.168.86.75:80/library/myapp
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0 
       - name: setup-python-venv
         run: |
           python3 -m venv venv
