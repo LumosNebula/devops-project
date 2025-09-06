@@ -14,41 +14,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python venv and install deps
+      - name: setup-python-venv
         run: |
           python3 -m venv venv
           . venv/bin/activate
           python -m pip install --upgrade pip
           if [ -f apps/myapp/requirements.txt ]; then pip install -r apps/myapp/requirements.txt; fi
 
-      - name: Run unit tests
+      - name: run-unit-tests
         run: |
           . venv/bin/activate
           python -m unittest discover || true
 
-      - name: Docker login to Harbor
+      - name: docker-login-harbor
         env:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
         run: |
-          if [ -z "${HARBOR_USER}" ] || [ -z "${HARBOR_PASS}" ]; then echo "HARBOR secrets not set"; exit 1; fi
+          if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASS" ]; then
+            echo "HARBOR_USER/HARBOR_PASS not set; aborting"
+            exit 1
+          fi
           echo "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
 
-      - name: Build and push image
+      - name: build-and-push-image
         id: build-image
         run: |
+          set -e
           IMAGE_TAG=$(git rev-parse --short=12 HEAD)
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          docker build -t $IMAGE_REPO:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
-          docker push $IMAGE_REPO:${IMAGE_TAG}
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
+          docker push ${IMAGE_REPO}:${IMAGE_TAG}
 
-      - name: Update Helm chart values and push back to repo
-        if: ${{ secrets.CI_GIT_TOKEN != '' }}
+      - name: update-helm-values-and-push
         env:
           CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
-          IMAGE_TAG: ${{ steps.build-image.outputs.IMAGE_TAG }}
           REPO: ${{ github.repository }}
+          IMAGE_TAG: ${{ steps.build-image.outputs.IMAGE_TAG }}
         run: |
+          if [ -z "$CI_GIT_TOKEN" ]; then
+            echo "CI_GIT_TOKEN not set; skipping Helm values update"
+            exit 0
+          fi
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
@@ -59,25 +66,33 @@ jobs:
           git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
           git push origin main
 
-      - name: Trigger ArgoCD sync
-        if: ${{ secrets.ARGOCD_TOKEN != '' && secrets.ARGOCD_SERVER != '' }}
+      - name: trigger-argocd-sync
         env:
-          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
+          if [ -z "$ARGOCD_SERVER" ] || [ -z "$ARGOCD_TOKEN" ]; then
+            echo "ARGOCD_SERVER or ARGOCD_TOKEN not set; skipping ArgoCD sync"
+            exit 0
+          fi
           APP_NAME="myapp"
           curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
 
-      - name: Apply manifests via KUBECONFIG
-        if: ${{ secrets.KUBECONFIG != '' }}
+      - name: apply-manifests-via-kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG not provided; skipping kubectl apply"
+            exit 0
+          fi
           echo "${KUBECONFIG_B64}" | base64 --decode > kubeconfig
           export KUBECONFIG=$PWD/kubeconfig
           kubectl get nodes -o wide
           kubectl apply -f manifests/ || true
 
-      - name: Final status
+      - name: final-status
         run: |
-          echo "IMAGE pushed: $IMAGE_REPO:${{ steps.build-image.outputs.IMAGE_TAG }}"
+          echo "Image pushed: ${IMAGE_REPO}:${{ steps.build-image.outputs.IMAGE_TAG }}"
+          kubectl --kubeconfig=/var/jenkins_home/.kube/config get pods -l app=myapp -n default -o wide || true
+          sed -n '1,160p' charts/myapp/values.yaml || true
