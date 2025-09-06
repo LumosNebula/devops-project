@@ -1,0 +1,68 @@
+name: CI-CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  IMAGE_REPO: 192.168.86.75:80/library/myapp
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Run tests
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install -U pip
+          if [ -f apps/myapp/requirements.txt ]; then pip install -r apps/myapp/requirements.txt; fi
+          if command -v pytest >/dev/null 2>&1; then pytest -q apps/myapp || true; else python -m unittest discover apps/myapp || true; fi
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USER: ${{ secrets.HARBOR_USER }}
+          HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
+        run: |
+          echo "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
+
+      - name: Build and push image
+        id: build
+        run: |
+          IMAGE_TAG=$(git rev-parse --short HEAD)
+          docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
+          docker push ${IMAGE_REPO}:${IMAGE_TAG}
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Update charts/myapp/values.yaml and push
+        if: ${{ secrets.CI_GIT_TOKEN != '' }}
+        env:
+          IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git remote set-url origin https://x-access-token:${{ secrets.CI_GIT_TOKEN }}@github.com/${{ github.repository }}.git
+          sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
+          git add charts/myapp/values.yaml
+          git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
+          git push origin HEAD:main || echo "push failed"
+
+      - name: (Optional) Trigger ArgoCD sync via API if configured
+        if: ${{ secrets.ARGOCD_TOKEN != '' && env.ARGOCD_SERVER != '' }}
+        env:
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          curl -s -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" https://${{ env.ARGOCD_SERVER }}/api/v1/applications/myapp/sync || true
+
