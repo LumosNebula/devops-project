@@ -36,6 +36,10 @@ jobs:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
         run: |
+          if [ -z "${HARBOR_USER}" ] || [ -z "${HARBOR_PASS}" ]; then
+            echo "HARBOR_USER or HARBOR_PASS not set; aborting docker login"
+            exit 1
+          fi
           echo "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
 
       - name: Build and push image
@@ -47,22 +51,30 @@ jobs:
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       - name: Update charts/myapp/values.yaml and push
-        if: ${{ secrets.CI_GIT_TOKEN != '' }}
         env:
+          CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
         run: |
+          if [ -z "${CI_GIT_TOKEN}" ]; then
+            echo "CI_GIT_TOKEN is empty, skipping update of charts/myapp/values.yaml"
+            exit 0
+          fi
           git config user.email "actions@github.com"
           git config user.name "github-actions"
-          git remote set-url origin https://x-access-token:${{ secrets.CI_GIT_TOKEN }}@github.com/${{ github.repository }}.git
+          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${{ github.repository }}.git
           sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
           git add charts/myapp/values.yaml
           git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
           git push origin HEAD:main || echo "push failed"
 
-      - name: (Optional) Trigger ArgoCD sync via API if configured
-        if: ${{ secrets.ARGOCD_TOKEN != '' && env.ARGOCD_SERVER != '' }}
+      - name: Optional - Trigger ArgoCD sync via API if configured
         env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
-          curl -s -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" https://${{ env.ARGOCD_SERVER }}/api/v1/applications/myapp/sync || true
+          if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ]; then
+            echo "ARGOCD_SERVER or ARGOCD_TOKEN not set; skipping ArgoCD API sync"
+            exit 0
+          fi
+          curl -s -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" https://${ARGOCD_SERVER}/api/v1/applications/myapp/sync || true
 
