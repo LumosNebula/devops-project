@@ -11,30 +11,33 @@ jobs:
     runs-on: [self-hosted, linux, docker]
     env:
       IMAGE_REPO: 192.168.86.75:80/library/myapp
+
     steps:
-      #  Checkout 使用 SSH
-      - name: Checkout repository via SSH
+      # Checkout 仓库，用 SSH Deploy Key
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           repository: LumosNebula/devops-project
           ssh-key: ${{ secrets.SSH_DEPLOY_KEY }}
           fetch-depth: 0
 
-      # 设置 Python 虚拟环境
-      - name: Setup Python venv
+      # Setup Python venv
+      - name: Setup Python virtual environment
         run: |
           python3 -m venv venv
           . venv/bin/activate
           python -m pip install --upgrade pip
-          if [ -f apps/myapp/requirements.txt ]; then pip install -r apps/myapp/requirements.txt; fi
+          if [ -f apps/myapp/requirements.txt ]; then
+            pip install -r apps/myapp/requirements.txt
+          fi
 
-      # 运行单元测试
+      # Run unit tests
       - name: Run unit tests
         run: |
           . venv/bin/activate
           python -m unittest discover || true
 
-      # Docker 登录 Harbor
+      # Docker login to Harbor
       - name: Docker login to Harbor
         env:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
@@ -46,38 +49,28 @@ jobs:
           fi
           echo "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
 
-      # Build & Push 镜像
+      #  Build & push Docker image
       - name: Build and push Docker image
         id: build-image
         run: |
-          set -e
           IMAGE_TAG=$(git rev-parse --short=12 HEAD)
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
           docker push ${IMAGE_REPO}:${IMAGE_TAG}
 
-      # 更新 Helm values 并推回 GitHub
-      - name: Update Helm values and push
-        env:
-          CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
-          REPO: ${{ github.repository }}
-          IMAGE_TAG: ${{ steps.build-image.outputs.IMAGE_TAG }}
+      #  Update Helm chart values & push back using SSH
+      - name: Update Helm chart image tag
         run: |
-          if [ -z "$CI_GIT_TOKEN" ]; then
-            echo "CI_GIT_TOKEN not set; skipping Helm values update"
-            exit 0
-          fi
+          IMAGE_TAG=${{ steps.build-image.outputs.IMAGE_TAG }}
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
-          git fetch origin
           git checkout -B main
           sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
           git add charts/myapp/values.yaml
-          git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
+          git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
           git push origin main
 
-      # Trigger ArgoCD sync
+      #  Trigger ArgoCD sync
       - name: Trigger ArgoCD sync
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
@@ -88,10 +81,11 @@ jobs:
             exit 0
           fi
           APP_NAME="myapp"
-          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
+          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
+            "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
 
-      # 可选：直接 apply manifests
-      - name: Apply manifests via Kubeconfig
+      # Apply manifests via kubeconfig 
+      - name: Apply manifests via kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
@@ -104,7 +98,7 @@ jobs:
           kubectl get nodes -o wide
           kubectl apply -f manifests/ || true
 
-      #  输出最终状态
+      #  Final status
       - name: Final status
         run: |
           echo "Image pushed: ${IMAGE_REPO}:${{ steps.build-image.outputs.IMAGE_TAG }}"
