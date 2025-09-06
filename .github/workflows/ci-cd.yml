@@ -12,13 +12,12 @@ jobs:
     env:
       IMAGE_REPO: 192.168.86.75:80/library/myapp
     steps:
-      # 1. Checkout 代码
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. 设置 Python 虚拟环境
-      - name: setup-python-venv
+      - name: Setup Python venv
         run: |
           python3 -m venv venv
           . venv/bin/activate
@@ -27,26 +26,23 @@ jobs:
             pip install -r apps/myapp/requirements.txt
           fi
 
-      # 3. 单元测试
-      - name: run-unit-tests
+      - name: Run unit tests
         run: |
           . venv/bin/activate
           python -m unittest discover || true
 
-      # 4. Docker 登录 Harbor
-      - name: docker-login-harbor
+      - name: Docker login to Harbor
         env:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
         run: |
           if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASS" ]; then
-            echo "HARBOR_USER or HARBOR_PASS not set; aborting docker login"
+            echo "HARBOR_USER/HARBOR_PASS not set; aborting"
             exit 1
           fi
           printf '%s' "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
 
-      # 5. 构建并推送 Docker 镜像
-      - name: build-and-push-image
+      - name: Build and push Docker image
         id: build-image
         run: |
           set -e
@@ -55,8 +51,7 @@ jobs:
           docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
           docker push ${IMAGE_REPO}:${IMAGE_TAG}
 
-      # 6. 更新 Helm values 并 push 到 GitHub
-      - name: update-helm-values-and-push
+      - name: Update Helm values and push
         env:
           CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
           REPO: ${{ github.repository }}
@@ -68,7 +63,7 @@ jobs:
           fi
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
+          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}.git
           git fetch origin
           git checkout -B main
           sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
@@ -76,8 +71,7 @@ jobs:
           git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
           git push origin main
 
-      # 7. Argo CD 同步
-      - name: trigger-argocd-sync
+      - name: Trigger ArgoCD sync (optional)
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
@@ -87,11 +81,9 @@ jobs:
             exit 0
           fi
           APP_NAME="myapp"
-          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
-            "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
+          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
 
-      # 8. 应用 manifests
-      - name: apply-manifests-via-kubeconfig
+      - name: Apply manifests via kubeconfig (optional)
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
@@ -104,8 +96,7 @@ jobs:
           kubectl get nodes -o wide
           kubectl apply -f manifests/ || true
 
-      # 9. 输出最终状态
-      - name: final-status
+      - name: Final status
         run: |
           echo "Image pushed: ${IMAGE_REPO}:${{ steps.build-image.outputs.IMAGE_TAG }}"
           kubectl --kubeconfig=/var/jenkins_home/.kube/config get pods -l app=myapp -n default -o wide || true
