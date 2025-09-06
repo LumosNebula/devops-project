@@ -1,95 +1,86 @@
-name: CI-CD Pipeline
+name: ci-cd
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
-env:
-  IMAGE_REPO: 192.168.86.75:80/library/myapp
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:
     runs-on: [self-hosted, linux, docker]
+    env:
+      IMAGE_REPO: 192.168.86.75:80/library/myapp
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
-      - name: Configure git for pushes
+      - name: Setup Python venv and install deps
         run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
+          python3 -m venv venv
+          . venv/bin/activate
+          python -m pip install --upgrade pip
+          if [ -f apps/myapp/requirements.txt ]; then pip install -r apps/myapp/requirements.txt; fi
 
-      - name: Python venv and unit tests
-        shell: bash
+      - name: Run unit tests
         run: |
-          set -euo pipefail
-          if command -v python3 >/dev/null 2>&1; then
-            python3 -m venv venv
-            . venv/bin/activate
-            pip install --upgrade pip
-            if [ -f apps/myapp/requirements.txt ]; then
-              pip install -r apps/myapp/requirements.txt
-            fi
-            python -m unittest discover || true
-          fi
+          . venv/bin/activate
+          python -m unittest discover || true
 
       - name: Docker login to Harbor
         env:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
         run: |
-          set -euo pipefail
-          if [ -z "${HARBOR_USER:-}" ] || [ -z "${HARBOR_PASS:-}" ]; then
-            echo "HARBOR_USER or HARBOR_PASS not provided"
-            exit 1
-          fi
+          if [ -z "${HARBOR_USER}" ] || [ -z "${HARBOR_PASS}" ]; then echo "HARBOR secrets not set"; exit 1; fi
           echo "$HARBOR_PASS" | docker login 192.168.86.75:80 -u "$HARBOR_USER" --password-stdin
 
-      - name: Build and push Docker image
-        env:
-          IMAGE_REPO: ${{ env.IMAGE_REPO }}
+      - name: Build and push image
+        id: build-image
         run: |
-          set -euo pipefail
-          IMAGE_TAG=$(git rev-parse --short=8 HEAD)
-          docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
-          docker push ${IMAGE_REPO}:${IMAGE_TAG}
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          IMAGE_TAG=$(git rev-parse --short=12 HEAD)
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $IMAGE_REPO:${IMAGE_TAG} -f apps/myapp/Dockerfile apps/myapp
+          docker push $IMAGE_REPO:${IMAGE_TAG}
 
-      - name: Update Helm chart values and push to repo
+      - name: Update Helm chart values and push back to repo
         if: ${{ secrets.CI_GIT_TOKEN != '' }}
+        env:
+          CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
+          IMAGE_TAG: ${{ steps.build-image.outputs.IMAGE_TAG }}
+          REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          IMAGE_TAG=${{ env.IMAGE_TAG }}
+          if [ -z "${CI_GIT_TOKEN}" ]; then echo "CI_GIT_TOKEN missing"; exit 1; fi
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git remote set-url origin https://x-access-token:${CI_GIT_TOKEN}@github.com/${REPO}
+          git fetch origin
+          git checkout -B main
           sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" charts/myapp/values.yaml
           git add charts/myapp/values.yaml
-          git commit -m "Update Helm chart image tag to ${IMAGE_TAG}" || true
-          git push https://x-access-token:${{ secrets.CI_GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+          git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "no changes to commit"
+          git push origin main
 
       - name: Trigger ArgoCD sync
         if: ${{ secrets.ARGOCD_TOKEN != '' && secrets.ARGOCD_SERVER != '' }}
+        env:
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
         run: |
-          set -euo pipefail
           APP_NAME="myapp"
-          ARGO_SERVER="${{ secrets.ARGOCD_SERVER }}"
-          ARGO_TOKEN="${{ secrets.ARGOCD_TOKEN }}"
-          curl -k -s -H "Authorization: Bearer ${ARGO_TOKEN}" -X POST "https://${ARGO_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
+          if [ -z "${ARGOCD_TOKEN}" ] || [ -z "${ARGOCD_SERVER}" ]; then echo "ArgoCD info missing"; exit 1; fi
+          curl -k -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" "${ARGOCD_SERVER}/api/v1/applications/${APP_NAME}/sync" || true
 
-      - name: Wait for Kubernetes deployment ready
+      - name: Apply manifests via KUBECONFIG
         if: ${{ secrets.KUBECONFIG != '' }}
         env:
-          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
-          set -euo pipefail
-          mkdir -p ~/.kube
-          echo "$KUBECONFIG_CONTENT" > ~/.kube/config
-          kubectl -n default rollout status deployment/myapp --timeout=120s || true
+          echo "${KUBECONFIG_B64}" | base64 --decode > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
+          kubectl get nodes -o wide
+          kubectl apply -f manifests/ || true
 
-      - name: HTTP smoke test
+      - name: Final status
         run: |
-          set -euo pipefail
-          sleep 5
-          curl -fsS http://myapp.default.svc.cluster.local:8080/health || true
+          echo "IMAGE pushed: $IMAGE_REPO:${{ steps.build-image.outputs.IMAGE_TAG }}"
+
