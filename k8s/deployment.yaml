@@ -17,7 +17,7 @@ spec:
       nodeName: k8s-harbor
       containers:
       - name: myapp
-        image: 192.168.86.75:80/library/myapp:latest
+        image: harbor.local:30003/library/myapp:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
