@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_REPO = "192.168.86.75:80/library/myapp"
+        IMAGE_REPO = "harbor.local:30003/library/myapp"
     }
 
     stages {
