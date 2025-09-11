@@ -13,7 +13,7 @@ jobs:
       IMAGE_REPO: harbor.local:30003/library/myapp
 
     steps:
-      # Checkout 仓库，用 SSH Deploy Key 
+      # Checkout 仓库，用 SSH Deploy Key
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
