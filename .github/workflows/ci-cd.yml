@@ -10,7 +10,7 @@ jobs:
   build-and-deploy:
     runs-on: [self-hosted, linux, docker]
     env:
-      IMAGE_REPO: 192.168.86.75:30003/library/myapp
+      IMAGE_REPO: harbor.local:30003/library/myapp
 
     steps:
       # Checkout 仓库，用 SSH Deploy Key 
@@ -47,7 +47,7 @@ jobs:
             echo "HARBOR_USER/HARBOR_PASS not set; aborting"
             exit 1
           fi
-          echo "$HARBOR_PASS" | docker login 192.168.86.75:30003 -u "$HARBOR_USER" --password-stdin
+          echo "$HARBOR_PASS" | docker login harbor.local:30003 -u "$HARBOR_USER" --password-stdin
 
       #  Build & push Docker image
       - name: Build and push Docker image
