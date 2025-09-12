@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: myapp-rules
+  namespace: monitoring
+spec:
+  groups:
+    - name: myapp.rules
+      rules:
+        - alert: MyAppHighErrorRate
+          expr: |
+            sum(rate(myapp_http_requests_total{app="myapp", http_status=~"5.."}[5m]))
+            /
+            sum(rate(myapp_http_requests_total{app="myapp"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "High 5xx error rate for myapp"
+            description: "Error rate > 5% for last 5 minutes for myapp"
+
