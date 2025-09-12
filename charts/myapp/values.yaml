@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
   repository: "harbor.local:30003/library/myapp"
-  tag: b311a462cc70
+  tag: df0a800af425
   pullPolicy: IfNotPresent
 service:
   type: ClusterIP
