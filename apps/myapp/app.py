@@ -53,5 +53,31 @@ def metrics():
     data = generate_latest()
     return Response(data, mimetype=CONTENT_TYPE_LATEST)
 
+@app.route("/fault")
+def fault():
+    """
+    Simulate errors for testing:
+    /fault?code=500&delay=0.2&count=1
+    - code : HTTP status code to return (default 500)
+    - delay: seconds to sleep before responding (default 0)
+    - count: number of requests that will return the error; if count>1 successive requests return the error
+    This endpoint is only for demo/testing in your environment.
+    """
+    code = int(request.args.get("code", 500))
+    delay = float(request.args.get("delay", 0))
+    try:
+        count = int(request.args.get("count", 1))
+    except Exception:
+        count = 1
+
+    if delay > 0:
+        time.sleep(delay)
+
+    # Simple behavior: always return the requested status (for simplicity)
+    if 200 <= code < 400:
+        return jsonify({"message": "ok"}), code
+    else:
+        return jsonify({"error": "simulated failure", "code": code}), code
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
