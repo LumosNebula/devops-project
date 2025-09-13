@@ -3,6 +3,8 @@ kind: PrometheusRule
 metadata:
   name: myapp-rules
   namespace: monitoring
+  labels:
+    release: kube-prom-stack
 spec:
   groups:
     - name: myapp.rules

@@ -4,16 +4,15 @@ metadata:
   name: myapp-servicemonitor
   namespace: monitoring
   labels:
-    release: prometheus-stack
+    release: kube-prom-stack
 spec:
   selector:
     matchLabels:
       app: myapp
   namespaceSelector:
-    any: true
+    matchNames:
+      - default
   endpoints:
     - port: http
       path: /metrics
       interval: 15s
-      # 如果需要 basic auth 或 tls 可以在这里扩展
-
