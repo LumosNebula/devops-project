@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: email-alerts
+  namespace: monitoring
+spec:
+  route:
+    receiver: email-receiver
+    groupBy: ['alertname']
+    groupWait: 10s
+    groupInterval: 10s
+    repeatInterval: 1h
+  receivers:
+    - name: email-receiver
+      emailConfigs:
+        - to: "870692011@qq.com"
+          from: "870692011@qq.com"
+          smarthost: "smtp.qq.com:587" 
+          hello: "smtp.qq.com"
+          authIdentity: "870692011@qq.com"
+          authUsername: "870692011@qq.com"
+          authPassword:
+            name: alertmanager-smtp-secret
+            key: smtp-pass
+          requireTLS: true  
+          sendResolved: true
