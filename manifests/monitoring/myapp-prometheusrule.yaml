@@ -7,17 +7,33 @@ metadata:
     release: kube-prom-stack
 spec:
   groups:
-    - name: myapp.rules
+    - name: myapp.recording
+      rules:
+        # 记录规则：5 分钟内每秒请求速率（总）
+        - record: job:myapp:requests_per_second:rate5m
+          expr: sum(rate(myapp_http_requests_total{app="myapp"}[5m]))
+        # 记录规则：5xx 错误的每秒速率（总）
+        - record: job:myapp:errors_5xx_per_second:rate5m
+          expr: sum(rate(myapp_http_requests_total{app="myapp", http_status=~"5.."}[5m]))
+        # 记录规则：5 分钟内 95 百分位延迟（秒）
+        - record: job:myapp:request_latency_p95_seconds:5m
+          expr: histogram_quantile(0.95, sum(rate(myapp_request_latency_seconds_bucket{app="myapp"}[5m])) by (le))
+    - name: myapp.alerts
       rules:
         - alert: MyAppHighErrorRate
           expr: |
-            sum(rate(myapp_http_requests_total{app="myapp", http_status=~"5.."}[5m]))
+            (
+              job:myapp:errors_5xx_per_second:rate5m
+            )
             /
-            sum(rate(myapp_http_requests_total{app="myapp"}[5m])) > 0.05
+            (
+              job:myapp:requests_per_second:rate5m
+            ) > 0.05
           for: 5m
           labels:
             severity: page
+            app: myapp
           annotations:
-            summary: "High 5xx error rate for myapp"
-            description: "Error rate > 5% for last 5 minutes for myapp"
+            summary: "High 5xx error rate on myapp"
+            description: "MyApp 5xx error rate > 5% for 5m ({{ $value }})"
 
